@@ -27,6 +27,11 @@ let read_fasta chan =
 (* ------------------------------------------------------------------- *)
 
 (* Utilities *)
+
+let diewith msg = 
+  output_string stderr msg;
+  exit 1
+
 let fst (a,_) = a ;;
 let snd (_,b) = b ;;
 
@@ -129,9 +134,15 @@ let protein_from_mrna rna =
 
 (* ------------------------------------------------------------------- *)
 
+let note_int_of_string string =
+  match String.uppercase_ascii string with
+  | "C" | "B+" -> 0  | "C+" | "D-" -> 1 | "D" -> 2  | "D+" | "E-" -> 3
+  | "E" | "F-" -> 4 | "F" -> 5 | "F+" | "G-" -> 6 | "G" -> 7 | "G+" | "A-" -> 8
+  | "A" -> 9 | "A+" | "B-" -> 10 | "B" -> 11
+  | _ -> failwith "Not a note"
 
-(* Map each amminoacid to an integer *)
-let int_of_amminoacid = function
+(* Map each aminoacid to an integer *)
+let int_of_aminoacid = function
   | 'A' -> 0
   | 'C' -> 1
   | 'D' -> 2
@@ -153,12 +164,12 @@ let int_of_amminoacid = function
   | 'W' -> 18
   | 'Y' -> 19
   | '0' -> 20
-  | _ -> failwith "not amminoacid"
+  | _ -> failwith "not aminoacid"
 
-(** Get a list of integers from an amminoacid string  *)
-let list_of_amminoacid string = List.map int_of_amminoacid @@ list_of_string string
+(** Get a list of integers from an aminoacid string  *)
+let list_of_aminoacid string = List.map int_of_aminoacid @@ list_of_string string
 
-(**  Get an octave from an amminoacid integer*)
+(**  Get an octave from an aminoacid integer*)
 let octave_of_int num = num mod 8
 
 (** Get a delay from the start of the bar, in 16th *)
@@ -205,7 +216,7 @@ let string_of_note ~bar ~date ~dur ~oct ~note =
   Printf.sprintf "N %d %d %d %d %d %d\n"
     ((bar * 960) + date) oct note 100 dur 1
 
-(** Magic: read amminoacid integers 4 at a time, in sequences of
+(** Magic: read aminoacid integers 4 at a time, in sequences of
  notes_in_bar notes. The first sector in a sequence encodes how
  many notes will be in that bar. *)
 let rec encode ~buf ~seq ~bar ~notes_in_bar ~current_note_in_bar
@@ -267,20 +278,24 @@ let rec encode ~buf ~seq ~bar ~notes_in_bar ~current_note_in_bar
 (* Main *)
 
 let () =
-  (* Read, merge and trim dna strings from a FASTA file *)
-  let str = String.concat "" @@ sndl @@ read_fasta stdin in
-  let seq = list_of_amminoacid @@ protein_from_mrna @@ rna_of_dna @@ trim_string_to_mod 3 str in
-  let buf = Buffer.create (List.length seq * 8) in
-  let argc = Array.length Sys.argv in
-  if argc >= 3 then failwith "Could not parse arguments";
-  let scale = if argc > 1 then int_of_string @@ Sys.argv.(1) else -1 in
-  let minor = if argc > 2 then bool_of_string @@ Sys.argv.(2) else false in
-  encode
-    ~buf:buf
-    ~seq:seq
-    ~bar:0
-    ~notes_in_bar:0
-    ~current_note_in_bar:(-1)
-    ~scale:scale ~minor:minor
-    ();
-  print_endline @@ Buffer.contents buf
+  try
+    (* Read, merge and trim dna strings from a FASTA file *)
+    let str = String.concat "" @@ sndl @@ read_fasta stdin in
+    let seq = list_of_aminoacid @@ protein_from_mrna @@ rna_of_dna @@ trim_string_to_mod 3 str in
+    let buf = Buffer.create (List.length seq * 8) in
+    let argc = Array.length Sys.argv in
+    if argc >= 3 then failwith "Could not parse arguments";
+    let scale = if argc > 1 then note_int_of_string @@ Sys.argv.(1) else -1 in
+    let minor = if argc > 2 then bool_of_string @@ Sys.argv.(2) else false in
+    encode
+      ~buf:buf
+      ~seq:seq
+      ~bar:0
+      ~notes_in_bar:0
+      ~current_note_in_bar:(-1)
+      ~scale:scale ~minor:minor
+      ();
+    print_endline @@ Buffer.contents buf
+  with
+    | Failure s -> diewith s
+    | exc -> raise exc
